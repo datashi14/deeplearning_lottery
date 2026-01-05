@@ -38,4 +38,4 @@ spec:
           command: ["bash", "-lc"]
           args:
             - |
-              python -m ticketsmith.train --config configs/dense_mnist.yaml
+              python -m ticketsmith.train --config configs/train_cifar10.yaml

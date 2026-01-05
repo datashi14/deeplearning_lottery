@@ -7,8 +7,9 @@ import sys
 import time
 from ticketsmith.utils.config import load_config, hash_config
 from ticketsmith.utils.artifacts import ArtifactManager
-from ticketsmith.utils.data import get_mnist_loaders
+from ticketsmith.utils.data import get_loaders
 from ticketsmith.models.mnist_cnn import MNISTCNN
+from ticketsmith.models.resnet import ResNet18
 
 from ticketsmith.models.unet import SimpleUNet
 from ticketsmith.utils.diffusion_core import Diffusion
@@ -19,6 +20,9 @@ def get_model(config, device):
         return MNISTCNN().to(device)
     elif family == 'mnist_diffusion':
         return SimpleUNet().to(device)
+    elif family == 'resnet18':
+        num_classes = config['model'].get('num_classes', 10)
+        return ResNet18(num_classes=num_classes).to(device)
     else:
         raise ValueError(f"Unknown model family: {family}")
 
@@ -138,9 +142,7 @@ def main():
     torch.manual_seed(seed)
     
     # Load Data
-    train_loader, val_loader = get_mnist_loaders(
-        batch_size=config['training'].get('batch_size', 64)
-    )
+    train_loader, val_loader = get_loaders(config)
     
     # Model
     model = get_model(config, device)

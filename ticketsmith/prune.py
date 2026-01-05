@@ -6,7 +6,7 @@ import sys
 import os
 from ticketsmith.utils.config import load_config, hash_config
 from ticketsmith.utils.artifacts import ArtifactManager
-from ticketsmith.utils.data import get_mnist_loaders
+from ticketsmith.utils.data import get_loaders
 from ticketsmith.models.mnist_cnn import MNISTCNN
 from ticketsmith.models.unet import SimpleUNet
 from ticketsmith.utils.diffusion_core import Diffusion
@@ -37,9 +37,7 @@ def main():
     print(f"Using device: {device}")
     
     # Data
-    train_loader, val_loader = get_mnist_loaders(
-        batch_size=config['training'].get('batch_size', 64)
-    )
+    train_loader, val_loader = get_loaders(config)
     
     # Model Init
     seed = config['training'].get('seed', 42)

@@ -1,0 +1,17 @@
+model:
+  family: resnet18
+training:
+  dataset: cifar10
+  batch_size: 128
+  lr: 0.1
+  momentum: 0.9
+  weight_decay: 0.0005
+  epochs: 10
+  seed: 42
+pruning:
+  rounds: 3
+  rate: 0.2
+  compare_random: true
+quality_gate:
+  max_val_acc_drop: 2.0
+  max_val_loss_delta: 20.0

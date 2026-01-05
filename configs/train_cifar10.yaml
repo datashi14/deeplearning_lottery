@@ -1,0 +1,11 @@
+model:
+  family: resnet18
+  num_classes: 10
+training:
+  dataset: cifar10
+  batch_size: 128
+  lr: 0.1
+  momentum: 0.9
+  weight_decay: 0.0005
+  epochs: 20
+  seed: 42

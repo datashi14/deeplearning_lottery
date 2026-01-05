@@ -100,7 +100,7 @@ TicketSmith's history demonstrates **architectural robustness under constraints*
 
 1.  **Azure Phase (CPU Validation)**: Initial deployment on AKS encountered regional GPU quota limits. I pivoted to an intentional CPU-only validation phase to prove the container, logic, and artifact pipeline worked end-to-end.
 2.  **Migration Phase**: Documented and executed a full migration from Azure (AKS/Blob/ACR) to GCP (GKE/GCS/GAR).
-3.  **Production Phase (Current)**: Fully operational GPU training with scale-to-zero autoscaling and CI/CD automation.
+3.  **Production Phase (Current)**: Fully operational GPU training with scale-to-zero autoscaling and CI/CD automation. Now conducting high-fidelity experiments on **CIFAR-10** using **ResNet-18** architectures to validate LTH at scale.
 
 ## 🛡️ The Engineering Struggle: Hard-won Lessons
 
