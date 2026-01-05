@@ -1,0 +1,37 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ticketsmith-train-dense
+  namespace: ticketsmith
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 7200
+  template:
+    spec:
+      restartPolicy: Never
+      nodeSelector:
+        agentpool: gpu
+      tolerations:
+        - key: "sku"
+          operator: "Equal"
+          value: "gpu"
+          effect: "NoSchedule"
+      containers:
+        - name: runner
+          image: acrticketsmith.azurecr.io/ticketsmith:dev
+          imagePullPolicy: Always
+          envFrom:
+            - secretRef:
+                name: blob-secret
+          resources:
+            limits:
+              nvidia.com/gpu: 1
+              cpu: "2"
+              memory: "8Gi"
+            requests:
+              cpu: "1"
+              memory: "4Gi"
+          command: ["bash", "-lc"]
+          args:
+            - |
+              python -m ticketsmith.train --config configs/dense_mnist.yaml

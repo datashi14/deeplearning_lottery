@@ -1,0 +1,32 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ticketsmith-train-dense-cpu
+  namespace: ticketsmith
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 21600
+  template:
+    spec:
+      restartPolicy: Never
+      nodeSelector:
+        agentpool: runner
+      containers:
+        - name: runner
+          image: acrticketsmith.azurecr.io/ticketsmith:dev
+          imagePullPolicy: Always
+          envFrom:
+            - secretRef:
+                name: blob-secret
+          resources:
+            requests:
+              cpu: "1"
+              memory: "1.5Gi"
+            limits:
+              cpu: "2"
+              memory: "2Gi"
+          command: ["bash", "-lc"]
+          args:
+            - |
+              export DEVICE=cpu
+              python -m ticketsmith.train --config configs/dense_mnist.yaml

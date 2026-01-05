@@ -1,0 +1,25 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: gpu-smoke
+  namespace: ticketsmith
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 900
+  template:
+    spec:
+      restartPolicy: Never
+      nodeSelector:
+        agentpool: gpu
+      tolerations:
+        - key: "sku"
+          operator: "Equal"
+          value: "gpu"
+          effect: "NoSchedule"
+      containers:
+        - name: nvidia-smi
+          image: nvidia/cuda:12.3.2-base-ubuntu22.04
+          resources:
+            limits:
+              nvidia.com/gpu: 1
+          command: ["bash", "-lc", "nvidia-smi && echo OK"]

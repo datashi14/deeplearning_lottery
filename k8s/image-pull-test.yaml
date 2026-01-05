@@ -1,0 +1,14 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: image-pull-test
+  namespace: ticketsmith
+spec:
+  backoffLimit: 0
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: runner
+          image: acrticketsmith.azurecr.io/ticketsmith:dev
+          command: ["bash", "-lc", 'python -c "print(''pulled OK'')"']
