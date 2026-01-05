@@ -84,7 +84,27 @@ TicketSmith's history demonstrates **architectural robustness under constraints*
 2.  **Migration Phase**: Documented and executed a full migration from Azure (AKS/Blob/ACR) to GCP (GKE/GCS/GAR).
 3.  **Production Phase (Current)**: Fully operational GPU training with scale-to-zero autoscaling and CI/CD automation.
 
-For the full technical record, see [Azure to GCP Migration Docs](docs/azure-to-gcp-migration.md).
+## 🛡️ The Engineering Struggle: Hard-won Lessons
+
+Building a cross-cloud ML platform isn't just about architectural diagrams—it's about overcoming the friction of real-world infrastructure.
+
+### 1. Windows Shell Parsing vs. Cloud CLI
+
+One of the greatest points of friction was the **Windows Shell (PowerShell/CMD)** fighting against the complex multi-argument flags required by the Google Cloud SDK. Commas and quotes within strings (e.g., `--attribute-mapping="a=b,c=d"`) are often mangled by the underlying shell pre-processor.
+
+- **Resolution**: Sidestepped shell parsing entirely by using JSON and YAML configuration files which `gcloud` reads directly via `--attribute-mapping-file` and `--flags-file`.
+
+### 2. The Evolution of Zero-Trust (WIF Security)
+
+GCP has recently tightened its **Workload Identity Federation (WIF)** requirements. While many legacy tutorials imply a simple mapping is enough, current GCP policies **REQUIRE** an `--attribute-condition` for OIDC providers. Without this, the IAM bridge remains closed with a cryptic `INVALID_ARGUMENT` error.
+
+- **Lesson**: Security by default is the new frontier. Explicitly white-listing the repo owner/path in the identity provider is no longer optional—it is a production requirement.
+
+### 3. Identity Resolution (Project Number vs. ID)
+
+Global IAM bindings in GCP often silently require the **12-digit Project Number** instead of the human-readable Project ID in certain formatted strings (like `principalSet://`).
+
+- **Lesson**: Always verify identity strings against the raw project metadata when automated bindings fail.
 
 ---
 
