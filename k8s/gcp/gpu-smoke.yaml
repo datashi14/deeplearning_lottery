@@ -11,7 +11,7 @@ spec:
       restartPolicy: Never
       # GKE Specific Node Selector
       nodeSelector:
-        cloud.google.com/gke-accelerator: nvidia-l4
+        cloud.google.com/gke-accelerator: nvidia-tesla-t4
       # Standard GKE Taints for GPUs
       tolerations:
         - key: "nvidia.com/gpu"

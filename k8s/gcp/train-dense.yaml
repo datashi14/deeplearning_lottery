@@ -11,7 +11,7 @@ spec:
       serviceAccountName: ticketsmith-ksa
       restartPolicy: Never
       nodeSelector:
-        cloud.google.com/gke-accelerator: nvidia-l4
+        cloud.google.com/gke-accelerator: nvidia-tesla-t4
       tolerations:
         - key: "nvidia.com/gpu"
           operator: "Exists"
