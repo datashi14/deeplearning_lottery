@@ -1,5 +1,7 @@
 # TicketSmith
 
+**Cloud migration note**: TicketSmith was initially validated on Azure AKS (CPU) due to GPU quota restrictions in the target region. I documented the full AKS→GKE migration and moved GPU execution to GCP with CI/CD and scale-to-zero GPU pools. See `docs/azure-to-gcp-migration.md`.
+
 **TicketSmith** is a production-style ML experimentation platform designed to demonstrate and operationalize the **Lottery Ticket Hypothesis (LTH)**. It proves that we can remove a large portion of a model’s parameters (making it smaller and cheaper) while maintaining similar quality, provided we prune and retrain in a disciplined way.
 
 ## 🚀 The Mission
