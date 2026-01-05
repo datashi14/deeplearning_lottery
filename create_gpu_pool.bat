@@ -1,0 +1,1 @@
+call gcloud container node-pools create gpu-pool --cluster ticketsmith --zone us-central1-a --machine-type n1-standard-4 --accelerator type=nvidia-tesla-t4,count=1 --num-nodes 0 --enable-autoscaling --min-nodes 0 --max-nodes 1
