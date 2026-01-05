@@ -19,12 +19,12 @@ spec:
       containers:
         - name: runner
           # Replace PROJECT_ID with the actual project ID closer to execution
-          image: us-central1-docker.pkg.dev/PROJECT_ID/ticketsmith/ticketsmith:latest
+          image: us-central1-docker.pkg.dev/propane-net-247501/ticketsmith/ticketsmith:latest
           imagePullPolicy: Always
           env:
             # GCP Workload Identity handles auth, we just provide the bucket name
             - name: AZURE_BLOB_CONTAINER
-              value: "gs://ticketsmith-runs-PROJECT_ID"
+              value: "gs://ticketsmith-runs-propane-net-247501"
           # The python code needs to detect 'gs://' prefix to use GCS client instead of Azure SDK
           # This requires a small code update to ticketsmith/utils/storage.py
           resources:

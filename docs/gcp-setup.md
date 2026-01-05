@@ -6,13 +6,16 @@ This guide contains the exact commands to provision the accessible, GPU-enabled 
 
 Ensure you have the Google Cloud CLI (`gcloud`) installed and authenticated.
 
+````bash
 ```bash
 # Login and set project
 gcloud auth login
-gcloud config set project YOUR_PROJECT_ID
+gcloud config set project propane-net-247501
 gcloud config set compute/region us-central1
 gcloud config set compute/zone us-central1-a
-```
+````
+
+````
 
 ## 2. Artifact Registry & Storage
 
@@ -28,7 +31,7 @@ gcloud artifacts repositories create ticketsmith \
 # 2. Create GCS Bucket for Artifacts
 # Note: Bucket names must be globally unique. Append a random suffix or your project ID.
 gsutil mb -l us-central1 gs://ticketsmith-runs-$(gcloud config get-value project)
-```
+````
 
 ## 3. GKE Cluster Provisioning
 
