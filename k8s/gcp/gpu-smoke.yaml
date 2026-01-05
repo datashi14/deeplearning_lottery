@@ -5,7 +5,7 @@ metadata:
   namespace: ticketsmith
 spec:
   backoffLimit: 0
-  activeDeadlineSeconds: 900
+  activeDeadlineSeconds: 3600
   template:
     spec:
       restartPolicy: Never
