@@ -10,61 +10,107 @@ from ticketsmith.utils.artifacts import ArtifactManager
 from ticketsmith.utils.data import get_mnist_loaders
 from ticketsmith.models.mnist_cnn import MNISTCNN
 
-def train(args, model, device, train_loader, optimizer, epoch, artifact_manager, post_step_callback=None):
+from ticketsmith.models.unet import SimpleUNet
+from ticketsmith.utils.diffusion_core import Diffusion
+
+def get_model(config, device):
+    family = config['model'].get('family', 'mnist_cnn')
+    if family == 'mnist_cnn':
+        return MNISTCNN().to(device)
+    elif family == 'mnist_diffusion':
+        return SimpleUNet().to(device)
+    else:
+        raise ValueError(f"Unknown model family: {family}")
+
+def train_one_epoch(args, model, device, train_loader, optimizer, epoch, artifact_manager, config, post_step_callback=None):
     model.train()
     total_loss = 0
-    correct = 0
-    start_time = time.time()
+    correct = 0 # Only for classification
+    
+    family = config['model'].get('family', 'mnist_cnn')
+    
+    # Init Diffusion if needed
+    if family == 'mnist_diffusion':
+        # Create diffusion schedule on the fly or pass it? 
+        # Typically fixed. Creating light object is fine.
+        timesteps = config['training'].get('timesteps', 300)
+        diffusion = Diffusion(timesteps=timesteps, device=device)
     
     for batch_idx, (data, target) in enumerate(train_loader):
         data, target = data.to(device), target.to(device)
         optimizer.zero_grad()
-        output = model(data)
-        loss = F.nll_loss(output, target)
+        
+        if family == 'mnist_cnn':
+            output = model(data)
+            loss = F.nll_loss(output, target)
+            pred = output.argmax(dim=1, keepdim=True)
+            correct += pred.eq(target.view_as(pred)).sum().item()
+            
+        elif family == 'mnist_diffusion':
+            # Diffusion Training
+            # Sample t uniformly
+            t = torch.randint(0, diffusion.timesteps, (data.shape[0],), device=device).long()
+            loss = diffusion.p_losses(model, data, t, loss_type="l2")
+            # corrective metrics? MSE is loss.
+        
         loss.backward()
         optimizer.step()
         
         if post_step_callback:
             post_step_callback(model)
         
-        total_loss += loss.item() * data.size(0) # Accumulate sum of losses
-        pred = output.argmax(dim=1, keepdim=True)
-        correct += pred.eq(target.view_as(pred)).sum().item()
-
-        
-        if batch_idx % 100 == 0:
-            print(f'Train Epoch: {epoch} [{batch_idx * len(data)}/{len(train_loader.dataset)} '
-                  f'({100. * batch_idx / len(train_loader):.0f}%)]\tLoss: {loss.item():.6f}')
+        total_loss += loss.item() * data.size(0) 
 
     avg_loss = total_loss / len(train_loader.dataset)
-    accuracy = 100. * correct / len(train_loader.dataset)
     
     artifact_manager.log_metric('train_loss', avg_loss, epoch)
-    artifact_manager.log_metric('train_acc', accuracy, epoch)
-    print(f'Epoch {epoch} Train Loss: {avg_loss:.4f}, Accuracy: {accuracy:.2f}%')
+    print(f'Epoch {epoch} Train Loss: {avg_loss:.4f}')
+    
+    if family == 'mnist_cnn':
+        accuracy = 100. * correct / len(train_loader.dataset)
+        artifact_manager.log_metric('train_acc', accuracy, epoch)
+        print(f'Accuracy: {accuracy:.2f}%')
 
-def test(model, device, test_loader, artifact_manager, epoch=None):
+def test(model, device, test_loader, artifact_manager, config, epoch=None):
     model.eval()
     test_loss = 0
     correct = 0
+    
+    family = config['model'].get('family', 'mnist_cnn')
+    if family == 'mnist_diffusion':
+        timesteps = config['training'].get('timesteps', 300)
+        diffusion = Diffusion(timesteps=timesteps, device=device)
+
     with torch.no_grad():
         for data, target in test_loader:
             data, target = data.to(device), target.to(device)
-            output = model(data)
-            test_loss += F.nll_loss(output, target, reduction='sum').item()  # sum up batch loss
-            pred = output.argmax(dim=1, keepdim=True)  # get the index of the max log-probability
-            correct += pred.eq(target.view_as(pred)).sum().item()
+            
+            if family == 'mnist_cnn':
+                output = model(data)
+                test_loss += F.nll_loss(output, target, reduction='sum').item()
+                pred = output.argmax(dim=1, keepdim=True)
+                correct += pred.eq(target.view_as(pred)).sum().item()
+            elif family == 'mnist_diffusion':
+                # For validation loss, we just sample random t again?
+                # Or fixed t for consistency? Random is fine for expectation.
+                t = torch.randint(0, diffusion.timesteps, (data.shape[0],), device=device).long()
+                loss = diffusion.p_losses(model, data, t, loss_type="l2") 
+                test_loss += loss.item() * data.size(0)
 
     test_loss /= len(test_loader.dataset)
-    accuracy = 100. * correct / len(test_loader.dataset)
-
-    print(f'Test set: Average loss: {test_loss:.4f}, Accuracy: {correct}/{len(test_loader.dataset)} '
-          f'({accuracy:.2f}%)\n')
     
+    acc_metric = 0.0
+    if family == 'mnist_cnn':
+        acc_metric = 100. * correct / len(test_loader.dataset)
+        print(f'Test set: Average loss: {test_loss:.4f}, Accuracy: {correct}/{len(test_loader.dataset)} ({acc_metric:.2f}%)\n')
+    else:
+        print(f'Test set: Average loss: {test_loss:.4f} (Diffusion MSE)\n')
+
     if epoch is not None:
         artifact_manager.log_metric('val_loss', test_loss, epoch)
-        artifact_manager.log_metric('val_acc', accuracy, epoch)
-    return test_loss, accuracy
+        if family == 'mnist_cnn':
+            artifact_manager.log_metric('val_acc', acc_metric, epoch)
+    return test_loss, acc_metric
 
 def main():
     parser = argparse.ArgumentParser(description="Run dense training.")
@@ -97,7 +143,7 @@ def main():
     )
     
     # Model
-    model = MNISTCNN().to(device)
+    model = get_model(config, device)
     
     # Optimization
     optimizer = optim.SGD(model.parameters(), 
@@ -106,31 +152,17 @@ def main():
     
     # Training Loop
     epochs = config['training'].get('epochs', 5)
-    start_time = time.time()
     
     for epoch in range(1, epochs + 1):
-        train(args, model, device, train_loader, optimizer, epoch, am)
-        test(model, device, val_loader, am, epoch)
+        train_one_epoch(args, model, device, train_loader, optimizer, epoch, am, config)
+        test(model, device, val_loader, am, config, epoch)
         
-    total_time = time.time() - start_time
-    am.log_metric('total_gpu_time', total_time)
-    
     # Save Final Model
     am.save_checkpoint(model.state_dict(), 'final_dense')
     
-    # Save Loss Curve Plot
-    fig, ax = plt.subplots()
-    train_losses = [x['value'] for x in am.metrics['train_loss']]
-    val_losses = [x['value'] for x in am.metrics['val_loss']]
-    ax.plot(range(1, epochs+1), train_losses, label='Train Loss')
-    ax.plot(range(1, epochs+1), val_losses, label='Val Loss')
-    ax.set_xlabel('Epoch')
-    ax.set_ylabel('Loss')
-    ax.legend()
-    am.save_plot('loss_curve', fig)
-    
     am.save_metrics()
     print(f"Training complete. Artifacts saved to {am.run_dir}")
+
 
 if __name__ == "__main__":
     main()

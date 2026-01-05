@@ -54,13 +54,55 @@ class QualityGate:
             
         return passed, reasons, signals
 
-def generate_sample_grid(model, device, loader, save_path, samples=16):
+def generate_sample_grid(model, device, loader, save_path, samples=16, config=None):
     """
     Generates a grid of predictions vs ground truth for classifiers.
     For Diffusion, this would be actual generation.
     """
     model.eval()
     
+    images_list = []
+    
+    family = 'mnist_cnn'
+    if config:
+        family = config['model'].get('family', 'mnist_cnn')
+
+    if family == 'mnist_diffusion':
+        from ticketsmith.utils.diffusion_core import Diffusion
+        timesteps = config['training'].get('timesteps', 300)
+        diffusion = Diffusion(timesteps=timesteps, device=device)
+        # Sample pure noise
+        # We don't use loader data, we generate from scratch
+        # But we might want to compare 16 samples.
+        generated_imgs = diffusion.sample(model, image_size=28, batch_size=samples)
+        
+        # Determine strict grid size
+        rows = int(samples**0.5)
+        cols = int(samples / rows) + (1 if samples % rows != 0 else 0)
+        
+        fig, axes = plt.subplots(rows, cols, figsize=(cols*2, rows*2.5))
+        axes = axes.flatten()
+        
+        for i in range(len(generated_imgs)):
+            ax = axes[i]
+            # Unnormalize? Generated is [-1, 1] usually.
+            # MNIST is [0, 1].
+            # Map [-1, 1] -> [0, 1]
+            img = (generated_imgs[i].cpu().squeeze() + 1) / 2
+            ax.imshow(img, cmap='gray')
+            ax.set_title(f"Gen {i}")
+            ax.axis('off')
+            
+        for i in range(len(generated_imgs), len(axes)):
+            axes[i].axis('off')
+            
+        plt.tight_layout()
+        plt.savefig(save_path)
+        plt.close(fig)
+        print(f"Diffusion sample grid saved to {save_path}")
+        return
+
+    # CNN Logic
     images_list = []
     labels_list = []
     preds_list = []

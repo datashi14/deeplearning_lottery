@@ -1,0 +1,23 @@
+experiment_name: "imp_diffusion_mnist"
+model:
+  family: "mnist_diffusion"
+training:
+  epochs: 5
+  batch_size: 64
+  lr: 0.0001 # lower LR for diffusion
+  momentum: 0.9
+  seed: 42
+  timesteps: 300
+pruning:
+  rounds: 3
+  rate: 0.2
+  compare_random: true
+quality_gate:
+  enabled: true
+  max_loss_delta_pct: 0.2
+  max_acc_drop_absolute: 5.0 # N/A for diffusion unless we fix metric
+benchmark:
+  enabled: true
+  warmup_iters: 5
+  measure_iters: 20
+  batch_sizes: [1, 16]

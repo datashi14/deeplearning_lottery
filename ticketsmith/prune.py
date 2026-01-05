@@ -3,16 +3,19 @@ import torch
 import torch.optim as optim
 import copy
 import sys
+import os
 from ticketsmith.utils.config import load_config, hash_config
 from ticketsmith.utils.artifacts import ArtifactManager
 from ticketsmith.utils.data import get_mnist_loaders
 from ticketsmith.models.mnist_cnn import MNISTCNN
+from ticketsmith.models.unet import SimpleUNet
+from ticketsmith.utils.diffusion_core import Diffusion
 from ticketsmith.utils.pruning import Pruner
 from ticketsmith.utils.quality import QualityGate, generate_sample_grid
 from ticketsmith.utils.benchmark import run_benchmark
-from ticketsmith.train import train, test
+# Import training helpers
+from ticketsmith.train import train_one_epoch, test, get_model
 import time
-import copy
 
 def main():
     parser = argparse.ArgumentParser(description="Run pruning and retraining.")
@@ -41,7 +44,8 @@ def main():
     # Model Init
     seed = config['training'].get('seed', 42)
     torch.manual_seed(seed)
-    model = MNISTCNN().to(device)
+    
+    model = get_model(config, device)
     
     # Save Initial State (theta_0)
     initial_state = copy.deepcopy(model.state_dict())
@@ -53,8 +57,11 @@ def main():
     pruner = Pruner(model, pruning_rate=prune_rate)
     current_masks = None
     
+    family = config['model'].get('family', 'mnist_cnn')
+
     for round_idx in range(rounds + 1):
         print(f"\n--- Round {round_idx} / {rounds} ---")
+        sparsity = 0.0
         
         # 1. Setup Model
         if round_idx == 0:
@@ -67,17 +74,18 @@ def main():
             current_masks, sparsity_stats = pruner.compute_mask(current_masks)
             
             am.log_metric(f'round_{round_idx}_sparsity', sparsity_stats['global_sparsity'])
-            # Also log to global list for easy plotting
             am.log_metric('sparsity_level', sparsity_stats['global_sparsity'])
+            
+            sparsity = sparsity_stats['global_sparsity']
             
             # Rewind
             print("Rewinding to theta_0...")
-
             model.load_state_dict(initial_state)
             
             # Apply Initial Masking (zero out weights before starting)
             pruner.apply_mask(current_masks)
             
+        
         # 2. Train
         # Re-init optimizer each round
         optimizer = optim.SGD(model.parameters(), 
@@ -87,9 +95,6 @@ def main():
         # Callback to enforce mask
         def enforce_mask_callback(mdl):
             if current_masks:
-                # We need to apply mask to the passed model 'mdl'
-                # The pruner has a reference to 'self.model', which IS 'mdl' here
-                # But to be safe let's use the masks we calculated
                 for name, module in mdl.named_modules():
                     if name in current_masks:
                         mask = current_masks[name].to(module.weight.device)
@@ -100,30 +105,40 @@ def main():
         epochs = config['training'].get('epochs', 5)
         
         for epoch in range(1, epochs + 1):
-            train(args, model, device, train_loader, optimizer, epoch, am, post_step_callback=callback)
+            train_one_epoch(args, model, device, train_loader, optimizer, epoch, am, config, post_step_callback=callback)
             
-            loss, acc = test(model, device, val_loader, am, epoch=None) # Don't duplicate log to main val_acc if we want custom
-            am.log_metric(f'round_{round_idx}_acc', acc, epoch)
-            # Log separate 'val_loss' for caching baseline for gate
+            loss, metric_score = test(model, device, val_loader, am, config, epoch=None) 
+            
             am.log_metric(f'round_{round_idx}_loss', loss, epoch)
-            
-            am.log_metric('global_acc', acc) # Flattened view
+             
+            if family == 'mnist_cnn':
+                am.log_metric(f'round_{round_idx}_acc', metric_score, epoch)
+                am.log_metric('global_acc', metric_score) 
+            elif family == 'mnist_diffusion':
+                # metric_score is meaningless here (0)
+                # We need "Accuracy" or "Quality" for the report.
+                # Just log scalar 0 or use loss?
+                # The report logic expects 'Accuracy' column.
+                # Maybe map 1/loss or just negative loss? 
+                # Or run the classifier?
+                pass
             
         # 3. Save Round Checkpoint
         am.save_checkpoint(model.state_dict(), f'round_{round_idx}_model')
         
         # 4. Snapshot current performance for Quality Gate
         current_metrics = {
-            'val_acc': am.metrics.get(f'round_{round_idx}_acc')[-1]['value'],
             'val_loss': am.metrics.get(f'round_{round_idx}_loss')[-1]['value']
         }
+        if family == 'mnist_cnn':
+             current_metrics['val_acc'] = am.metrics.get(f'round_{round_idx}_acc')[-1]['value']
+        else:
+             # Diffusion: Use loss as proxy if no classifier score
+             # Ideally we run classifier here.
+             pass
         
         if round_idx == 0:
-            # This is baseline
             baseline_metrics = current_metrics
-            sparsity = 0.0
-        else:
-             sparsity = sparsity_stats['global_sparsity']
         
         # 5. Run Quality Gate
         qg = QualityGate(config)
@@ -139,9 +154,9 @@ def main():
         print(f"Quality Gate Round {round_idx}: {'PASS' if passed else 'FAIL'} {reasons}")
         
         # 6. Generate Sample Grid
-        import os
+        # Works for both families now
         grid_path = os.path.join(am.run_dir, 'plots', f'grid_round_{round_idx}.png')
-        generate_sample_grid(model, device, val_loader, grid_path)
+        generate_sample_grid(model, device, val_loader, grid_path, config=config)
         
         # 7. Run Benchmark (Serving Awareness)
         bench_variant_name = f"round_{round_idx}_sparsity_{int(sparsity*100)}"
@@ -150,11 +165,7 @@ def main():
         # 8. Random Re-init Comparison
         if round_idx > 0 and config.get('pruning', {}).get('compare_random', False):
             print(f"--- Round {round_idx} Random Re-init Comparison ---")
-            # Re-init model randomly
-            rand_model = MNISTCNN().to(device)
-            # Apply same mask
-            # We need to apply mask to rand_model
-            # callback closure captures 'current_masks', which is correct for this round
+            rand_model = get_model(config, device) # Dynamic
             
             # Apply initial mask (zero out)
             for name, module in rand_model.named_modules():
@@ -162,27 +173,23 @@ def main():
                     mask = current_masks[name].to(device)
                     module.weight.data *= mask
                     
-            # Optimizer for random model
             rand_optimizer = torch.optim.SGD(rand_model.parameters(), 
                               lr=config['training'].get('lr', 0.01),
                               momentum=config['training'].get('momentum', 0.9))
             
-            # Callback for rand model (same logic)
             def enforce_mask_rand(mdl):
                 for name, module in mdl.named_modules():
                     if name in current_masks:
                         mask = current_masks[name].to(module.weight.device)
                         module.weight.data *= mask
                         
-            # Train Random
             for epoch in range(1, epochs + 1):
-                train(args, rand_model, device, train_loader, rand_optimizer, epoch, am, post_step_callback=enforce_mask_rand)
-                loss, acc = test(rand_model, device, val_loader, am, epoch=None) # Don't main-log
-                # Log with special key
-                am.log_metric(f'round_{round_idx}_random_acc', acc, epoch)
+                train_one_epoch(args, rand_model, device, train_loader, rand_optimizer, epoch, am, config, post_step_callback=enforce_mask_rand)
+                loss, score = test(rand_model, device, val_loader, am, config, epoch=None)
+                if family == 'mnist_cnn':
+                     am.log_metric(f'round_{round_idx}_random_acc', score, epoch)
                 
-            print(f"Random Re-init Round {round_idx} Acc: {acc:.2f}%")
-
+            print(f"Random Re-init Round {round_idx} Score: {score:.2f}")
 
     am.save_metrics()
     print(f"IMP complete. Artifacts saved to {am.run_dir}")
