@@ -147,7 +147,7 @@ def main():
     loss = train_one_epoch_llm(model, tokenizer, train_data_list, optimizer, device, max_steps=20)
     print(f"\n🏁 Final Repair Loss: {loss:.4f}")
     
-    print(f"Validation Complete through Australian Legal Corpus.")
+    print("Validation Complete through Australian Legal Corpus.")
 
     # Save artifact for sweep tracking
     with open("sweep_results.csv", "a") as f:
