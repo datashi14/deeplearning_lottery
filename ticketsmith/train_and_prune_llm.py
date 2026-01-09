@@ -1,7 +1,8 @@
 import torch
 from datasets import load_dataset
-from ticketsmith.utils.model_loader import load_optimized_model
 from transformers import AutoTokenizer, AutoModelForCausalLM
+
+import argparse
 
 def train_one_epoch_llm(model, tokenizer, dataset, optimizer, device, max_steps=100):
     model.train()
@@ -35,45 +36,6 @@ def train_one_epoch_llm(model, tokenizer, dataset, optimizer, device, max_steps=
 
     return total_loss / (i+1)
 
-def prune_llm_mlp(model, amount=0.2):
-    """
-    Prunes the MLP layers (gate_proj, up_proj, down_proj) of Llama.
-    """
-    import torch.nn.utils.prune as prune
-    
-    # Identify MLP layers to prune
-    parameters_to_prune = []
-    for name, module in model.named_modules():
-        if "mlp" in name and isinstance(module, torch.nn.Linear):
-             # These are the 4-bit Linear layers usually? 
-             # Wait, bitsandbytes Linear4bit might not support torch.nn.utils.prune directly?
-             # Standard PyTorch pruning works on standard tensors. 4-bit weights are packed.
-             # This is the "Nightmare Mode" part. 
-             # We might need to dequantize -> prune -> requantize OR mask the weights conceptually.
-             # For this Phase 2 Proof, let's assume we might need to load in 16-bit to prune, 
-             # OR use a library like 'torch-pruning' that handles structural.
-             # BUT, the prompt said "Quantization-Aware Pruning".
-             # Usually you prune first then quantize, or use SparseGPT.
-             # Simple Magnitude Pruning on 4-bit weights is hard.
-             pass
-             
-    # PLAN B for 3070 "Nightmare Mode":
-    # If we load in 4-bit, we can't easily prune individual weights using standard PyTorch prune.
-    # The weights are in `module.weight` but they are QuantState objects or packed uint8.
-    
-    # SENIOR ENGINEER ADJUSTMENT:
-    # Instead of "Pruning" the 4-bit model directly (impossible/very hard), 
-    # we simulate sparsity or we must load in bfloat16 (8GB VRAM might choke on 1B model in fp16? 
-    # 1B Params = 2GB in FP16. So actually 1B fits in 8GB VRAM comfortably in FP16!)
-    # Ah! Llama-3.2-1B is small enough for FP16 on 8GB!
-    # 1B params * 2 bytes = 2GB. 
-    # Gradients = 2GB. 
-    # Optimizer (AdamW) = 8GB. -> This is the killer. Paged AdamW needed.
-    # So we CAN load in bfloat16 (not 4-bit) and use Paged AdamW to survive.
-    # This allows standard PyTorch pruning!
-    # Let's adjust the loader to load in bfloat16 instead of 4-bit for the Pruning experiment,
-    # relying on PagedOptimizer to save the day.
-    pass
 
 def patch_qwen_for_pruning(model):
     """
@@ -130,12 +92,13 @@ def load_australian_validation_data():
          
     return eval_texts
 
-import argparse
 
 def main():
     parser = argparse.ArgumentParser(description="TicketSmith LLM Pruner")
     parser.add_argument("--model", type=str, default="meta-llama/Llama-3.2-1B-Instruct", 
                         help="Model ID (e.g., meta-llama/Llama-3.2-1B-Instruct or Qwen/Qwen2.5-1.5B-Instruct)")
+    parser.add_argument("--sparsity", type=float, default=0.2, 
+                        help="Sparsity level (0.2, 0.5, 0.8)")
     args = parser.parse_args()
     
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -156,11 +119,11 @@ def main():
     pruned_count = 0
     for name, module in model.named_modules():
         if "mlp" in name and isinstance(module, torch.nn.Linear):
-            # Prune 20% of connections in MLP linear layers
-            prune.l1_unstructured(module, name='weight', amount=0.2)
+            # Prune X% of connections in MLP linear layers
+            prune.l1_unstructured(module, name='weight', amount=args.sparsity)
             pruned_count += 1
             
-    print(f"✅ Pruning masks applied to {pruned_count} layers. Model is now 20% sparse (simulated).")
+    print(f"✅ Pruning masks applied to {pruned_count} layers. Model is now {args.sparsity*100}% sparse (simulated).")
     
     # 3. Training Setup with Paged Optimizer (The "Low-VRAM Hack")
     import bitsandbytes as bnb
@@ -185,6 +148,10 @@ def main():
     print(f"\n🏁 Final Repair Loss: {loss:.4f}")
     
     print(f"Validation Complete through Australian Legal Corpus.")
+
+    # Save artifact for sweep tracking
+    with open("sweep_results.csv", "a") as f:
+        f.write(f"{model_id},{args.sparsity},{loss:.4f}\n")
 
 if __name__ == "__main__":
     main()
