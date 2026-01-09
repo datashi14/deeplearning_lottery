@@ -152,6 +152,15 @@ TicketSmith is a cloud-native platform deployed on **Google Cloud Platform (GCP)
 - **Solution**: Implemented multi-environment strategy (GKE for production, Colab + local RTX 3070 for development).
 - **Impact**: Hardware-agnostic design; validated locally while waiting for cloud quota.
 
+### 5. Case Study: Stabilizing Llama-3.2 on 8GB VRAM
+
+- **Challenge**: Encountered NaN loss and gradient explosion during the initial pruning of Llama-3.2-1B due to "Structural Pruning Shock."
+- **Root Cause Analysis**: Identified `bfloat16` numerical instability and 8-bit optimizer underflow during the first-step update.
+- **Resolution**:
+  - Implemented **Global Norm Gradient Clipping** (`max_norm=1.0`).
+  - Developed a **Linear Warmup Scheduler** to stabilize `PagedAdamW` states.
+- **Result**: Achieved stable convergence on the **Open Australian Legal Corpus** (3.11 Final Loss).
+
 ---
 
 ## 💰 Business Impact: Efficiency at Scale
